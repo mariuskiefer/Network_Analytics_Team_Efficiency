@@ -1,0 +1,352 @@
+---
+author: Marius Kiefer, Nathaniel Martin, Niiara Aliieva, Budour Alshaikh
+title: Network Analytics MTP Group 14
+date: last-modified
+abstract: This notebook documents group 14's work of the SMM638 network analytics MTP
+---
+
+## Information given 
+### Import libraries 
+```{python}
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import networkx as nx
+from scipy.stats import skew
+```
+
+### Load team-employee affiliation data
+```{python}
+teams = pd.read_csv("team_employee_affiliations.csv")
+teams
+```
+
+### Load project outcome data
+```{python}
+outcome = pd.read_csv("project_outcomes.csv")
+outcome
+```
+
+```{python}
+outcome.describe().T
+```
+
+### Load knowledge exchange data
+```{python}
+ke = pd.read_csv(
+"knowledge_exchange_network.csv",
+sep=",",
+header=None,
+names=["u", "v"]
+)
+ke
+```
+
+### load pandas dataframe into networkx Graph
+```{python}
+g = nx.from_pandas_edgelist(ke, source="u", target="v")
+```
+
+### Show the network graph
+```{python}
+nx.draw_kamada_kawai(g, node_size=10, node_color="lime", alpha=0.5)
+```
+
+
+## Random network vs KE network to show small world network
+```{python}
+# Parameters from original network
+n_nodes = g.number_of_nodes()
+n_edges = g.number_of_edges()
+p = (2 * n_edges) / float(n_nodes * (n_nodes - 1))
+
+# Calculate metrics for knowledge exchange network
+ke_clustering = nx.average_clustering(g)
+ke_dict_bet = nx.betweenness_centrality(g)
+ke_skew_bet_cent = skew(list(ke_dict_bet.values()))
+
+# Lists to store random network metrics
+random_clustering_values = []
+random_skewness_values = []
+
+# Generate 500 random graphs and compute metrics
+for i in range(500):
+    # Generate random graph
+    g_random = nx.erdos_renyi_graph(n=n_nodes, p=p, seed=i)
+    
+    # Calculate clustering coefficient
+    random_clustering = nx.average_clustering(g_random)
+    random_clustering_values.append(random_clustering)
+    
+    # Calculate betweenness centrality skewness
+    random_bet_cent = nx.betweenness_centrality(g_random)
+    random_skew_bet_cent = skew(list(random_bet_cent.values()))
+    random_skewness_values.append(random_skew_bet_cent)
+
+# Calculate means
+mean_random_clustering = np.mean(random_clustering_values)
+mean_random_skew_bet_cent = np.mean(random_skewness_values)
+
+print("SMALL WORLD NETWORK ANALYSIS")
+print("============================")
+print("\nClustering Coefficient Comparison:")
+print(f"Knowledge Exchange Network: {ke_clustering:.4f}")
+print(f"Random Networks (mean): {mean_random_clustering:.4f}")
+print(f"Ratio (KE/Random): {ke_clustering/mean_random_clustering:.2f}x")
+
+print("\nBetweenness Centrality Skewness Comparison:")
+print(f"Knowledge Exchange Network: {ke_skew_bet_cent:.4f}")
+print(f"Random Networks (mean): {mean_random_skew_bet_cent:.4f}")
+print(f"Ratio (KE/Random): {ke_skew_bet_cent/mean_random_skew_bet_cent:.2f}x")
+
+# Calculate standard deviations for statistical significance
+clustering_std = np.std(random_clustering_values)
+skewness_std = np.std(random_skewness_values)
+
+print("\nStatistical Significance:")
+print(f"Clustering Coefficient z-score: {(ke_clustering - mean_random_clustering)/clustering_std:.2f}")
+print(f"Betweenness Skewness z-score: {(ke_skew_bet_cent - mean_random_skew_bet_cent)/skewness_std:.2f}")
+```
+
+## Render Density Metrics
+
+### Node degree of NE network
+```{python}
+g_node_degree = nx.degree(g)
+print(g_node_degree)
+```
+
+
+### Clustering coefficient
+```{python}
+g_cc = nx.clustering(g)
+print(g_cc)
+```
+
+## Render Bridging Ties metrics
+
+### Constraints
+```{python}
+g_constraint = nx.constraint(g)
+print(g_constraint)
+```
+
+### Betweeness centrality
+
+```{python}
+g_between = nx.betweenness_centrality(g)
+print(g_between)
+```
+
+## Connectedness of each team 
+
+### Connectedness of the network
+```{python}
+g_connectedness = nx.is_connected(g)
+print(g_connectedness)
+```
+
+### Connectedness of a team in percent inside of the knowledge exchenge network  
+```{python}
+# The Dataframe produced shows the percentage of how many team members of each team are connected within the knowledge exchange network
+team_connected_components = []
+
+# Loop through each unique team_id in the teams DataFrame
+for team_id in teams['team_id'].unique():
+    # Get the list of nodes (empl_id) for the current team
+    team_nodes = teams[teams['team_id'] == team_id]['empl_id'].tolist()
+    
+    # Create a subgraph of G that includes only the nodes in team_nodes
+    team_subgraph = g.subgraph(team_nodes)
+    
+    # Calculate the number of connected components in the subgraph
+    num_connected_components = nx.number_connected_components(team_subgraph)
+    
+    # Get the number of team members
+    num_team_members = len(team_nodes)
+    
+    # Append the result as a dictionary
+    team_connected_components.append({
+        'team_id': team_id,
+        'num_connected_components': num_connected_components,
+        'num_team_members': num_team_members,
+        'connected_vs_members': num_connected_components / num_team_members
+    })
+
+# convert the list of dictionaries to a DataFrame
+connected_components_df = pd.DataFrame(team_connected_components)
+
+# sort dataframe after team ids
+connected_components_df.sort_values(by='team_id', inplace=True)
+
+# display the result
+connected_components_df
+```
+
+```{python}
+# overview over data
+connected_components_df.describe()
+```
+
+### Change node degree tuple list to dict type
+```{python}
+
+# type adjustment for later function
+g_node_degree_dict = dict(g_node_degree)
+
+# checking types to guarantee compatibility with from_dict function
+print(type(g_node_degree_dict))
+print(type(g_constraint))
+print(type(g_between))
+print(type(g_cc))
+```
+
+
+## Mapping network analytics metrics on each employee
+
+### Load node degree values into pandas dataframe
+```{python}
+# Could try the function without orient='index' to avoid changing it after
+emp_variables = pd.DataFrame.from_dict(g_node_degree_dict, orient='index')
+
+#Rename column of node degree values 
+emp_variables.rename(columns={0: 'node_degree'}, inplace=True)
+
+#Change empl_id into column values instead of df index
+emp_variables.index.name = 'empl_id'  
+emp_variables.reset_index(inplace=True)
+```
+
+
+### Map constraint values on empl_id
+```{python}
+# mapping contstraint values on each node
+emp_variables['constraint'] = emp_variables['empl_id'].map(g_constraint)
+```
+
+### Map betweenness centrality on empl_id
+```{python}
+# mapping betweenness centrality of each node
+emp_variables['bet_cent'] = emp_variables['empl_id'].map(g_between)
+```
+
+### Map clustering coefficient on empl_id
+```{python}
+# mapping clustering coefficients of each node 
+emp_variables['clust_coe'] = emp_variables['empl_id'].map(g_cc)
+```
+
+```{python}
+#show emp_variables dataframe (head function not used to see dataframe shape)
+emp_variables
+```
+
+## Merge of team ids on empl ids 
+
+### Merge team ids on empl ids
+```{python}
+# merging teams dataframe with KE Network analysis values dataframe
+combined = emp_variables.merge(teams[['team_id', 'empl_id']], on='empl_id', how='left')
+
+# sorting combined dataframe after empl_id
+combined.sort_values(by='empl_id', inplace=True)
+combined
+```
+
+## Team-level summarizations
+
+### MEAN summarization 
+ ```{python}
+#mean team level 
+team_level = combined.groupby('team_id').agg(
+    avg_degree=('node_degree', 'mean')  
+).reset_index()
+team_level["avg_bet"] = combined.groupby('team_id')['bet_cent'].mean().values
+team_level["avg_con"] = combined.groupby('team_id')['constraint'].mean().values
+team_level["avg_clust"] = combined.groupby('team_id')['clust_coe'].mean().values
+
+# merge with connectedness
+team_level = pd.merge(
+    team_level, 
+    connected_components_df[['team_id', 'connected_vs_members']], 
+    on='team_id', 
+    how='left'
+)
+
+#merge with project outcome
+emp_project_mean = pd.merge(team_level, outcome, on='team_id', how='left')
+emp_project_mean
+ ```
+
+### IQR summarization
+```{python}
+#iqr team level
+team_level = combined.groupby('team_id').agg(
+    iqr_degree=('node_degree', lambda x: x.quantile(0.75) - x.quantile(0.25)),  # IQR of 'node_degree' for each team
+    iqr_bet=('bet_cent', lambda x: x.quantile(0.75) - x.quantile(0.25)),    # IQR of 'bet_cent' for each team
+    iqr_con=('constraint', lambda x: x.quantile(0.75) - x.quantile(0.25)),  # IQR of 'constraint' for each team
+    iqr_clust=('clust_coe', lambda x: x.quantile(0.75) - x.quantile(0.25))  # IQR of 'clust_coe' for each team
+).reset_index()
+
+# merge with connectedness
+team_level = pd.merge(
+    team_level, 
+    connected_components_df[['team_id', 'connected_vs_members']], 
+    on='team_id', 
+    how='left'
+)
+
+#merge with project outcome
+emp_project_iqr = pd.merge(team_level, outcome, on='team_id', how='left')
+emp_project_iqr
+```
+
+### Range summarization
+```{python}
+#range team level
+team_level = combined.groupby('team_id').agg(
+    range_degree=('node_degree', lambda x: x.max() - x.min()),  
+    range_bet=('bet_cent', lambda x: x.max() - x.min()),    
+    range_con=('constraint', lambda x: x.max() - x.min()), 
+    range_clust=('clust_coe', lambda x: x.max() - x.min())  
+).reset_index()
+
+# merge with connectedness
+team_level = pd.merge(
+    team_level, 
+    connected_components_df[['team_id', 'connected_vs_members']], 
+    on='team_id', 
+    how='left'
+)
+
+#merge with project outcome
+emp_project_range = pd.merge(team_level, outcome, on='team_id', how='left')
+emp_project_range
+```
+
+
+## Correlation Matrices 
+
+### Correlation MEAN Team level
+```{python}
+correlation_matrix_mean = emp_project_mean.corr()
+
+print("Correlation Matrix:\n", correlation_matrix_mean)
+```
+
+### Correlation IQR Team level
+```{python}
+correlation_matrix_iqr = emp_project_iqr.corr()
+
+print("Correlation Matrix:\n", correlation_matrix_iqr)
+```
+
+### Correlation Range Team level
+```{python}
+correlation_matrix_range = emp_project_range.corr()
+
+print("Correlation Matrix:\n", correlation_matrix_range)
+```
+
+
